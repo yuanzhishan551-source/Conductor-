@@ -117,6 +117,8 @@ let recorder, analyser, particleSystem;
 let speedHistory = new Array(HISTORY_SIZE).fill(0);
 let previousHandPositions = { left: null, right: null };
 let fistHoldFrameCount = 0;
+let frameCount = 0;
+let currentPlaybackRate = 1.0;
 
 // 摄像机 Z 轴距离 (用于计算投影)
 const CAM_Z = 8; 
@@ -348,11 +350,35 @@ function calculateDynamics(leftPos, rightPos) {
 
     speedHistory.push(movement);
     speedHistory.shift();
-    const avgSpeed = speedHistory.reduce((a,b)=>a+b, 0) / HISTORY_SIZE;
+    frameCount++;
 
     const energyBar = document.getElementById('energy-bar-fill');
     const bpmDisplay = document.getElementById('bpm-display');
     const statusMsg = document.getElementById('status-msg');
+
+    // Update playback rate every HISTORY_SIZE frames (every 1.5 seconds)
+    if (frameCount >= HISTORY_SIZE) {
+        frameCount = 0;
+
+        const avgSpeed = speedHistory.reduce((a,b)=>a+b, 0) / HISTORY_SIZE;
+        const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 30, 1);
+
+        if (avgSpeed < STOP_THRESHOLD) {
+            currentPlaybackRate = 0.5;
+        } else {
+            currentPlaybackRate = 0.5 + (energy * 1.5); // ranges from 0.5 to 2.0
+        }
+
+        // Update all players with the new rate
+        if (channels.drum) channels.drum.playbackRate = currentPlaybackRate;
+        if (channels.piano) channels.piano.playbackRate = currentPlaybackRate;
+        if (channels.strings) channels.strings.playbackRate = currentPlaybackRate;
+        if (channels.wind) channels.wind.playbackRate = currentPlaybackRate;
+    }
+
+    // Calculate current average for display (but don't update playback rate)
+    const avgSpeed = speedHistory.reduce((a,b)=>a+b, 0) / HISTORY_SIZE;
+    const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 30, 1);
 
     if (avgSpeed < STOP_THRESHOLD) {
         Tone.Destination.volume.rampTo(-Infinity, 0.5);
@@ -360,30 +386,16 @@ function calculateDynamics(leftPos, rightPos) {
         energyBar.style.opacity = "0.2";
         bpmDisplay.innerText = "SILENCE";
         statusMsg.innerText = "";
-
-        // Slow down playback when stopped
-        if (channels.drum) channels.drum.playbackRate = 0.5;
-        if (channels.piano) channels.piano.playbackRate = 0.5;
-        if (channels.strings) channels.strings.playbackRate = 0.5;
-        if (channels.wind) channels.wind.playbackRate = 0.5;
     } else {
         if(Tone.Transport.state !== 'started') Tone.Transport.start();
-        Tone.Destination.volume.rampTo(0, 0.02); // Faster volume response
+        Tone.Destination.volume.rampTo(0, 0.02);
 
-        const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 30, 1); // More sensitive response
         const targetBpm = MIN_BPM + (energy * (MAX_BPM - MIN_BPM));
-        Tone.Transport.bpm.rampTo(targetBpm, 0.1); // Faster BPM response
-
-        // Control playback speed based on hand movement (0.5x to 2.0x)
-        const playbackRate = 0.5 + (energy * 1.5); // ranges from 0.5 to 2.0
-        if (channels.drum) channels.drum.playbackRate = playbackRate;
-        if (channels.piano) channels.piano.playbackRate = playbackRate;
-        if (channels.strings) channels.strings.playbackRate = playbackRate;
-        if (channels.wind) channels.wind.playbackRate = playbackRate;
+        Tone.Transport.bpm.rampTo(targetBpm, 0.1);
 
         energyBar.style.width = `${energy*100}%`;
         energyBar.style.opacity = "1";
-        bpmDisplay.innerText = `${Math.round(Tone.Transport.bpm.value)} BPM (${playbackRate.toFixed(2)}x)`;
+        bpmDisplay.innerText = `${Math.round(targetBpm)} BPM (${currentPlaybackRate.toFixed(2)}x)`;
         statusMsg.innerText = "CONDUCTING...";
     }
 }
