@@ -96,7 +96,7 @@
 
 <script>
 // ================= 配置区域 =================
-const HISTORY_SIZE = 40;
+const HISTORY_SIZE = 90; // ~1.5 seconds at 60fps for smoother BPM display
 const MIN_BPM = 60;
 const MAX_BPM = 180;
 const STOP_THRESHOLD = 0.005; 
@@ -368,11 +368,11 @@ function calculateDynamics(leftPos, rightPos) {
         if (channels.wind) channels.wind.playbackRate = 0.5;
     } else {
         if(Tone.Transport.state !== 'started') Tone.Transport.start();
-        Tone.Destination.volume.rampTo(0, 0.1);
+        Tone.Destination.volume.rampTo(0, 0.02); // Faster volume response
 
-        const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 25, 1);
+        const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 30, 1); // More sensitive response
         const targetBpm = MIN_BPM + (energy * (MAX_BPM - MIN_BPM));
-        Tone.Transport.bpm.rampTo(targetBpm, 0.2);
+        Tone.Transport.bpm.rampTo(targetBpm, 0.1); // Faster BPM response
 
         // Control playback speed based on hand movement (0.5x to 2.0x)
         const playbackRate = 0.5 + (energy * 1.5); // ranges from 0.5 to 2.0
