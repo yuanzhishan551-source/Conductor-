@@ -256,11 +256,11 @@ async function initAudio() {
     await Tone.start();
     recorder = new Tone.Recorder();
 
-    // Load the 4 audio files
-    channels.drum = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_drum_split_by_lalalai.mp4").toDestination().connect(recorder);
-    channels.piano = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_piano_split_by_lalalai.mp3").toDestination().connect(recorder);
-    channels.strings = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_strings_split_by_lalalai.mp4").toDestination().connect(recorder);
-    channels.wind = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_wind_split_by_lalalai.mp4").toDestination().connect(recorder);
+    // Load the 4 audio files using jsdelivr CDN for better CORS support
+    channels.drum = new Tone.Player("https://cdn.jsdelivr.net/gh/yuanzhishan551-source/Conductor-@main/1123398047-1-16_drum_split_by_lalalai.mp4").toDestination().connect(recorder);
+    channels.piano = new Tone.Player("https://cdn.jsdelivr.net/gh/yuanzhishan551-source/Conductor-@main/1123398047-1-16_piano_split_by_lalalai.mp3").toDestination().connect(recorder);
+    channels.strings = new Tone.Player("https://cdn.jsdelivr.net/gh/yuanzhishan551-source/Conductor-@main/1123398047-1-16_strings_split_by_lalalai.mp4").toDestination().connect(recorder);
+    channels.wind = new Tone.Player("https://cdn.jsdelivr.net/gh/yuanzhishan551-source/Conductor-@main/1123398047-1-16_wind_split_by_lalalai.mp4").toDestination().connect(recorder);
 
     // Set all players to loop
     channels.drum.loop = true;
