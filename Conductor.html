@@ -256,17 +256,34 @@ async function initAudio() {
     await Tone.start();
     recorder = new Tone.Recorder();
 
-    // Load the 4 audio files from GitHub raw (supports CORS)
-    channels.drum = new Tone.Player("https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_drum_split_by_lalalai.mp4").toDestination().connect(recorder);
-    channels.piano = new Tone.Player("https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_piano_split_by_lalalai.mp3").toDestination().connect(recorder);
-    channels.strings = new Tone.Player("https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_strings_split_by_lalalai.mp4").toDestination().connect(recorder);
-    channels.wind = new Tone.Player("https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_wind_split_by_lalalai.mp4").toDestination().connect(recorder);
+    // Load the 4 audio files using GrainPlayer (supports independent speed and pitch control)
+    channels.drum = new Tone.GrainPlayer({
+        url: "https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_drum_split_by_lalalai.mp4",
+        loop: true,
+        grainSize: 0.1,
+        overlap: 0.05
+    }).toDestination().connect(recorder);
 
-    // Set all players to loop
-    channels.drum.loop = true;
-    channels.piano.loop = true;
-    channels.strings.loop = true;
-    channels.wind.loop = true;
+    channels.piano = new Tone.GrainPlayer({
+        url: "https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_piano_split_by_lalalai.mp3",
+        loop: true,
+        grainSize: 0.1,
+        overlap: 0.05
+    }).toDestination().connect(recorder);
+
+    channels.strings = new Tone.GrainPlayer({
+        url: "https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_strings_split_by_lalalai.mp4",
+        loop: true,
+        grainSize: 0.1,
+        overlap: 0.05
+    }).toDestination().connect(recorder);
+
+    channels.wind = new Tone.GrainPlayer({
+        url: "https://raw.githubusercontent.com/yuanzhishan551-source/Conductor-/main/1123398047-1-16_wind_split_by_lalalai.mp4",
+        loop: true,
+        grainSize: 0.1,
+        overlap: 0.05
+    }).toDestination().connect(recorder);
 
     // Start with all volumes at -Infinity
     channels.drum.volume.value = -Infinity;
