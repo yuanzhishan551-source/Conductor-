@@ -64,7 +64,7 @@
     <div id="canvas-container"></div>
 
     <div id="ui-layer">
-        <div id="hud-panel" class="hidden">
+        <div id="hud-panel">
             <div style="margin-bottom:10px; font-size:12px; color:#ccc; border-bottom:1px solid #555; padding-bottom:5px;">CHANNEL STATUS</div>
             <div id="ch-thumb" class="channel-indicator" style="color: #666; opacity: 0.3;"><div class="dot"></div>DISABLED</div>
             <div id="ch-index" class="channel-indicator" style="color: #ffcc00"><div class="dot"></div>DRUM</div>
@@ -73,17 +73,10 @@
             <div id="ch-pinky" class="channel-indicator" style="color: #aa00ff"><div class="dot"></div>WIND</div>
         </div>
 
-        <div id="energy-container" class="hidden">
-            <div id="bpm-display">0 BPM</div>
+        <div id="energy-container">
+            <div id="bpm-display">CLICK ANYWHERE</div>
             <div id="energy-bar-bg"><div id="energy-bar-fill"></div></div>
             <div id="status-msg"></div>
-        </div>
-
-        <div id="start-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; cursor: pointer;">
-            <div style="text-align: center; color: white;">
-                <div style="font-size: 48px; margin-bottom: 20px;">🎵</div>
-                <div style="font-size: 24px; letter-spacing: 2px;">CLICK TO START</div>
-            </div>
         </div>
     </div>
 
@@ -462,13 +455,20 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Click to start
-document.getElementById('start-overlay').addEventListener('click', async () => {
-    document.getElementById('start-overlay').style.display = 'none';
-    document.getElementById('hud-panel').classList.remove('hidden');
-    document.getElementById('energy-container').classList.remove('hidden');
-
+// Initialize Three.js on page load
+window.addEventListener('DOMContentLoaded', () => {
     initThree();
+    animate();
+});
+
+// Start camera and audio on first click
+let started = false;
+document.addEventListener('click', async () => {
+    if (started) return;
+    started = true;
+
+    document.getElementById('bpm-display').innerText = '0 BPM';
+
     await initAudio();
 
     const video = document.getElementById('video-element');
@@ -479,8 +479,7 @@ document.getElementById('start-overlay').addEventListener('click', async () => {
     cam.start();
     recorder.start();
     currentState = 'CONDUCTING';
-    animate();
-});
+}, { once: true });
 </script>
 </body>
 </html>
