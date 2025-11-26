@@ -470,22 +470,32 @@ function animate() {
 }
 
 document.getElementById('start-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('start-btn');
+    btn.innerText = 'LOADING...';
+    btn.disabled = true;
+
     document.getElementById('center-controls').classList.add('hidden');
     document.getElementById('hud-panel').classList.remove('hidden');
     document.getElementById('energy-container').classList.remove('hidden');
-    
+
     initThree();
-    await initAudio();
-    
-    const video = document.getElementById('video-element');
-    const cam = new Camera(video, {
-        onFrame: async () => await hands.send({image: video}),
-        width: 1280, height: 720
-    });
-    cam.start();
-    recorder.start();
-    currentState = 'CONDUCTING';
-    animate();
+
+    try {
+        await initAudio();
+
+        const video = document.getElementById('video-element');
+        const cam = new Camera(video, {
+            onFrame: async () => await hands.send({image: video}),
+            width: 1280, height: 720
+        });
+        await cam.start();
+        recorder.start();
+        currentState = 'CONDUCTING';
+        animate();
+    } catch(error) {
+        alert('Error: ' + error.message);
+        console.error(error);
+    }
 });
 </script>
 </body>
