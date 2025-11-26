@@ -343,17 +343,30 @@ function calculateDynamics(leftPos, rightPos) {
         energyBar.style.opacity = "0.2";
         bpmDisplay.innerText = "SILENCE";
         statusMsg.innerText = "";
+
+        // Slow down playback when stopped
+        if (channels.drum) channels.drum.playbackRate = 0.5;
+        if (channels.piano) channels.piano.playbackRate = 0.5;
+        if (channels.strings) channels.strings.playbackRate = 0.5;
+        if (channels.wind) channels.wind.playbackRate = 0.5;
     } else {
         if(Tone.Transport.state !== 'started') Tone.Transport.start();
         Tone.Destination.volume.rampTo(0, 0.1);
-        
+
         const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 25, 1);
         const targetBpm = MIN_BPM + (energy * (MAX_BPM - MIN_BPM));
         Tone.Transport.bpm.rampTo(targetBpm, 0.2);
 
+        // Control playback speed based on hand movement (0.5x to 2.0x)
+        const playbackRate = 0.5 + (energy * 1.5); // ranges from 0.5 to 2.0
+        if (channels.drum) channels.drum.playbackRate = playbackRate;
+        if (channels.piano) channels.piano.playbackRate = playbackRate;
+        if (channels.strings) channels.strings.playbackRate = playbackRate;
+        if (channels.wind) channels.wind.playbackRate = playbackRate;
+
         energyBar.style.width = `${energy*100}%`;
         energyBar.style.opacity = "1";
-        bpmDisplay.innerText = `${Math.round(Tone.Transport.bpm.value)} BPM`;
+        bpmDisplay.innerText = `${Math.round(Tone.Transport.bpm.value)} BPM (${playbackRate.toFixed(2)}x)`;
         statusMsg.innerText = "CONDUCTING...";
     }
 }
