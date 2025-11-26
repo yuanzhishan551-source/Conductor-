@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 指挥家 - 精准对齐版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', monospace; }
+        
+        /* 1. 视频背景层 */
+        #video-element {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; 
+            z-index: 0;
+            /* 关键：水平翻转，营造镜子效果 */
+            transform: scaleX(-1); 
+            filter: grayscale(100%) contrast(1.2) brightness(0.5); 
+            transition: opacity 1s;
+        }
+
+        /* 2. 3D 渲染层 */
+        #canvas-container { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            z-index: 1; pointer-events: none;
+        }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+            pointer-events: none;
+        }
+
+        /* UI 样式保持不变 */
+        #hud-panel {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(0, 0, 0, 0.5); padding: 15px;
+            border-left: 3px solid #00ffff;
+            backdrop-filter: blur(5px);
+            pointer-events: auto;
+        }
+        .channel-indicator { display: flex; align-items: center; margin-bottom: 6px; font-size: 13px; opacity: 0.5; transition: 0.2s; }
+        .channel-indicator.active { opacity: 1; transform: translateX(5px); text-shadow: 0 0 8px currentColor; font-weight: bold; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; background: currentColor; box-shadow: 0 0 5px currentColor; }
+        
+        #energy-container {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 400px; text-align: center;
+        }
+        #energy-bar-bg { width: 100%; height: 4px; background: #333; margin-top: 10px; position: relative; }
+        #energy-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00ffff, #ff00ff); transition: width 0.1s linear; box-shadow: 0 0 10px #00ffff; }
+        #bpm-display { font-size: 32px; font-weight: 100; text-shadow: 0 0 10px #00ffff; letter-spacing: 2px; }
+        #status-msg { font-size: 12px; color: #aaa; margin-top: 5px; letter-spacing: 1px; }
+
+        #center-controls {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; pointer-events: auto;
+        }
+        #start-btn {
+            padding: 20px 60px; font-size: 20px; background: rgba(0,0,0,0.4);
+            color: #fff; border: 1px solid #fff; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 6px; transition: all 0.3s; backdrop-filter: blur(4px);
+        }
+        #start-btn:hover { background: #fff; color: #000; box-shadow: 0 0 30px white; }
+        .hidden { display: none !important; }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+
+    <video id="video-element" playsinline></video>
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div id="hud-panel" class="hidden">
+            <div style="margin-bottom:10px; font-size:12px; color:#ccc; border-bottom:1px solid #555; padding-bottom:5px;">CHANNEL STATUS</div>
+            <div id="ch-thumb" class="channel-indicator" style="color: #ff00cc"><div class="dot"></div>RHYTHM</div>
+            <div id="ch-index" class="channel-indicator" style="color: #ffcc00"><div class="dot"></div>BASS</div>
+            <div id="ch-middle" class="channel-indicator" style="color: #00ff00"><div class="dot"></div>HARMONY</div>
+            <div id="ch-ring" class="channel-indicator" style="color: #00ffff"><div class="dot"></div>MELODY</div>
+            <div id="ch-pinky" class="channel-indicator" style="color: #aa00ff"><div class="dot"></div>ATMOSPHERE</div>
+        </div>
+
+        <div id="energy-container" class="hidden">
+            <div id="bpm-display">0 BPM</div>
+            <div id="energy-bar-bg"><div id="energy-bar-fill"></div></div>
+            <div id="status-msg">请持续挥动双手以产生动能</div>
+        </div>
+
+        <div id="center-controls">
+            <button id="start-btn">START CONDUCTING</button>
+        </div>
+    </div>
+
+<script>
+// ================= 配置区域 =================
+const HISTORY_SIZE = 40;
+const MIN_BPM = 60;
+const MAX_BPM = 180;
+const STOP_THRESHOLD = 0.005; 
+const FINGER_COLORS = { thumb: 0xff00cc, index: 0xffcc00, middle: 0x00ff00, ring: 0x00ffff, pinky: 0xaa00ff };
+const FINGER_MAP = [
+    { name: 'thumb', tips: [1,2,3,4], color: FINGER_COLORS.thumb, id: 'ch-thumb' },
+    { name: 'index', tips: [5,6,7,8], color: FINGER_COLORS.index, id: 'ch-index' },
+    { name: 'middle', tips: [9,10,11,12], color: FINGER_COLORS.middle, id: 'ch-middle' },
+    { name: 'ring', tips: [13,14,15,16], color: FINGER_COLORS.ring, id: 'ch-ring' },
+    { name: 'pinky', tips: [17,18,19,20], color: FINGER_COLORS.pinky, id: 'ch-pinky' }
+];
+
+let currentState = 'IDLE';
+let scene, camera, renderer;
+let handMeshes = { left: null, right: null };
+let channels = {};
+let recorder, analyser, particleSystem;
+let speedHistory = new Array(HISTORY_SIZE).fill(0);
+let previousHandPositions = { left: null, right: null };
+let fistHoldFrameCount = 0;
+
+// 摄像机 Z 轴距离 (用于计算投影)
+const CAM_Z = 8; 
+
+// ================= 1. 视口计算工具 (核心修正) =================
+// 计算在相机特定 Z 轴深度下，可见平面的宽和高
+function getVisiblePlane(depth, camera) {
+    // 垂直视野角度 (弧度)
+    const vFOV = camera.fov * Math.PI / 180; 
+    // 可见高度 = 2 * tan(fov/2) * distance
+    const height = 2 * Math.tan(vFOV / 2) * depth;
+    const width = height * camera.aspect;
+    return { width, height };
+}
+
+// ================= 2. Three.js 骨骼类 =================
+class Hand3D {
+    constructor(scene) {
+        this.scene = scene;
+        this.joints = [];
+        this.bones = [];
+        
+        const jointGeo = new THREE.SphereGeometry(0.12, 16, 16);
+        for(let i=0; i<21; i++) {
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const mesh = new THREE.Mesh(jointGeo, mat);
+            this.scene.add(mesh);
+            this.joints.push(mesh);
+        }
+        
+        const connections = [[0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8], [0,9],[9,10],[10,11],[11,12], [0,13],[13,14],[14,15],[15,16], [0,17],[17,18],[18,19],[19,20], [5,9],[9,13],[13,17]];
+        connections.forEach(pair => {
+            const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]),
+                new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, linewidth: 2 })
+            );
+            line.userData = { start: pair[0], end: pair[1] };
+            this.scene.add(line);
+            this.bones.push(line);
+        });
+    }
+
+    update(landmarks) {
+        // 1. 获取当前视平面大小，确保精准对齐
+        const visible = getVisiblePlane(CAM_Z, camera);
+        
+        landmarks.forEach((lm, i) => {
+            // ============ 核心修正逻辑 ============
+            
+            // X轴：镜像翻转
+            // 原理：MediaPipe X (0左 -> 1右)。
+            // 视频 CSS 翻转了 (ScaleX -1)，所以用户把手放到屏幕右侧时，
+            // 摄像头原始数据其实是左侧 (x=0.1)。
+            // 为了让 3D 物体出现在屏幕右侧 (+X)，我们需要反向映射。
+            // (0.5 - lm.x) 使得：如果 x=0.1 (原图左)，结果为正 (0.4)，乘以宽度后位于右侧。
+            const x = (0.5 - lm.x) * visible.width;
+            
+            // Y轴：标准映射
+            // MediaPipe Y (0上 -> 1下)。
+            // Three.js Y (正上 -> 负下)。
+            const y = (0.5 - lm.y) * visible.height;
+            
+            // Z轴：深度缩放
+            // 手部 Z 坐标比较小，稍微放大一点让前后运动更明显
+            const z = -lm.z * 15; 
+
+            this.joints[i].position.set(x, y, z);
+            this.joints[i].visible = true;
+        });
+
+        // 更新骨骼线
+        this.bones.forEach(bone => {
+            bone.geometry.setFromPoints([this.joints[bone.userData.start].position, this.joints[bone.userData.end].position]);
+            bone.visible = true;
+        });
+        
+        this.updateColors(landmarks);
+    }
+
+    updateColors(landmarks) {
+        const wrist = landmarks[0];
+        FINGER_MAP.forEach(f => {
+            const tip = landmarks[f.tips[3]];
+            const pip = landmarks[f.tips[1]];
+            const distTip = Math.sqrt(Math.pow(tip.x-wrist.x,2)+Math.pow(tip.y-wrist.y,2));
+            const distPip = Math.sqrt(Math.pow(pip.x-wrist.x,2)+Math.pow(pip.y-wrist.y,2));
+            
+            const isExtended = distTip > distPip + 0.05;
+            const color = isExtended ? f.color : 0xffffff;
+            const opacity = isExtended ? 1.0 : 0.2;
+
+            f.tips.forEach(idx => {
+                this.joints[idx].material.color.setHex(color);
+                if(!isExtended) this.joints[idx].material.color.setHex(0xaaaaaa);
+            });
+            this.bones.forEach(b => {
+                if (f.tips.includes(b.userData.end) && b.userData.end !== 0) {
+                    b.material.color.setHex(color);
+                    b.material.opacity = opacity;
+                }
+            });
+        });
+    }
+
+    hide() { this.joints.forEach(j=>j.visible=false); this.bones.forEach(b=>b.visible=false); }
+}
+
+function initThree() {
+    const container = document.getElementById('canvas-container');
+    scene = new THREE.Scene();
+    
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.z = CAM_Z; // 固定相机距离
+    
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0);
+    container.appendChild(renderer.domElement);
+    
+    handMeshes.left = new Hand3D(scene);
+    handMeshes.right = new Hand3D(scene);
+
+    const light = new THREE.PointLight(0xffffff, 1, 100);
+    light.position.set(0, 0, 10);
+    scene.add(light);
+
+    // 窗口大小调整时更新
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+// ================= 3. 音频逻辑 (Tone.js) =================
+async function initAudio() {
+    await Tone.start();
+    recorder = new Tone.Recorder();
+    
+    channels.drums = new Tone.MembraneSynth().toDestination().connect(recorder);
+    channels.hat = new Tone.MetalSynth({ harmonicity:5.1, modulationIndex:32, envelope:{decay:0.5} }).toDestination().connect(recorder);
+    channels.bass = new Tone.FMSynth().toDestination().connect(recorder);
+    channels.chords = new Tone.PolySynth(Tone.Synth, { oscillator:{type:"fatsawtooth"} }).toDestination().connect(recorder);
+    channels.lead = new Tone.MonoSynth({ oscillator:{type:"square"} }).toDestination().connect(recorder);
+    channels.fx = new Tone.PluckSynth().toDestination().connect(recorder);
+
+    channels.hat.volume.value = -15;
+    Tone.Destination.volume.value = -Infinity;
+
+    new Tone.Loop(t => { 
+        channels.drums.triggerAttackRelease("C1", "8n", t);
+        channels.hat.triggerAttackRelease("32n", t+0.25);
+    }, "2n").start(0);
+    new Tone.Sequence((t,n) => channels.bass.triggerAttackRelease(n, "8n", t), ["C2","C2","F2","G2"], "2n").start(0);
+    new Tone.Loop(t => channels.chords.triggerAttackRelease(["C4","E4","G4"], "2n", t), "1m").start(0);
+    new Tone.Pattern((t,n) => channels.lead.triggerAttackRelease(n, "16n", t), ["C5","E5","G5","B5","C6"], "upDown").start(0);
+    new Tone.Loop(t => { if(Math.random()>0.5) channels.fx.triggerAttack("C6", t); }, "4n").start(0);
+
+    Tone.Transport.bpm.value = 100;
+}
+
+// ================= 4. 交互处理 =================
+function processConducting(results) {
+    const hands = results.multiHandLandmarks;
+    const handedness = results.multiHandedness;
+
+    handMeshes.left.hide(); handMeshes.right.hide();
+    let currentLeftPos = null, currentRightPos = null;
+
+    if (hands.length > 0) {
+        hands.forEach((lm, i) => {
+            const label = handedness[i].label; // MediaPipe: "Left" or "Right"
+            // 当视频被镜像后，MediaPipe 说的 "Right" 手在视觉上会出现在左边。
+            // 但因为我们也翻转了坐标计算，所以逻辑上：
+            // label === 'Right' (MediaPipe认为的右手) -> 其实对应用户的左手 (如果用户像照镜子一样)
+            // 不过为了简化，我们直接把数据喂给 mesh，让 update() 函数里的坐标变换去处理位置。
+            
+            if (label === 'Right') {
+                handMeshes.right.update(lm);
+                currentRightPos = lm[0];
+            } else {
+                handMeshes.left.update(lm);
+                currentLeftPos = lm[0];
+            }
+        });
+    }
+
+    calculateDynamics(currentLeftPos, currentRightPos);
+    updateChannelSwitches(hands);
+    checkStopGesture(hands);
+}
+
+function calculateDynamics(leftPos, rightPos) {
+    let movement = 0;
+    // 计算距离需要考虑坐标系，这里简单用欧氏距离，因为是归一化的所以数值较小
+    if (leftPos && previousHandPositions.left) {
+        movement += Math.hypot(leftPos.x - previousHandPositions.left.x, leftPos.y - previousHandPositions.left.y);
+    }
+    if (rightPos && previousHandPositions.right) {
+        movement += Math.hypot(rightPos.x - previousHandPositions.right.x, rightPos.y - previousHandPositions.right.y);
+    }
+    previousHandPositions.left = leftPos;
+    previousHandPositions.right = rightPos;
+
+    speedHistory.push(movement);
+    speedHistory.shift();
+    const avgSpeed = speedHistory.reduce((a,b)=>a+b, 0) / HISTORY_SIZE;
+
+    const energyBar = document.getElementById('energy-bar-fill');
+    const bpmDisplay = document.getElementById('bpm-display');
+    const statusMsg = document.getElementById('status-msg');
+
+    if (avgSpeed < STOP_THRESHOLD) {
+        Tone.Destination.volume.rampTo(-Infinity, 0.5);
+        energyBar.style.width = "0%";
+        energyBar.style.opacity = "0.2";
+        bpmDisplay.innerText = "SILENCE";
+        statusMsg.innerText = "挥动双手注入能量";
+    } else {
+        if(Tone.Transport.state !== 'started') Tone.Transport.start();
+        Tone.Destination.volume.rampTo(0, 0.1);
+        
+        const energy = Math.min((avgSpeed - STOP_THRESHOLD) * 25, 1);
+        const targetBpm = MIN_BPM + (energy * (MAX_BPM - MIN_BPM));
+        Tone.Transport.bpm.rampTo(targetBpm, 0.2);
+
+        energyBar.style.width = `${energy*100}%`;
+        energyBar.style.opacity = "1";
+        bpmDisplay.innerText = `${Math.round(Tone.Transport.bpm.value)} BPM`;
+        statusMsg.innerText = "CONDUCTING...";
+    }
+}
+
+function updateChannelSwitches(hands) {
+    let status = { thumb: false, index: false, middle: false, ring: false, pinky: false };
+    hands.forEach(lm => {
+        const wrist = lm[0];
+        FINGER_MAP.forEach(f => {
+            const tip = lm[f.tips[3]];
+            const pip = lm[f.tips[1]];
+            const distTip = Math.hypot(tip.x-wrist.x, tip.y-wrist.y);
+            const distPip = Math.hypot(pip.x-wrist.x, pip.y-wrist.y);
+            if (distTip > distPip + 0.05) status[f.name] = true;
+        });
+    });
+
+    const t = 0.1;
+    channels.drums.volume.rampTo(status.thumb ? -5 : -Infinity, t);
+    channels.hat.volume.rampTo(status.thumb ? -15 : -Infinity, t);
+    channels.bass.volume.rampTo(status.index ? -5 : -Infinity, t);
+    channels.chords.volume.rampTo(status.middle ? -10 : -Infinity, t);
+    channels.lead.volume.rampTo(status.ring ? -10 : -Infinity, t);
+    channels.fx.volume.rampTo(status.pinky ? -5 : -Infinity, t);
+
+    FINGER_MAP.forEach(f => {
+        const el = document.getElementById(f.id);
+        if(status[f.name]) el.classList.add('active'); else el.classList.remove('active');
+    });
+}
+
+function checkStopGesture(hands) {
+    if (hands.length === 1) {
+        const wrist = hands[0][0];
+        let folded = 0;
+        [8,12,16,20].forEach(i => {
+            const d = Math.hypot(hands[0][i].x-wrist.x, hands[0][i].y-wrist.y);
+            if (d < 0.15) folded++;
+        });
+        if (folded >= 4) {
+            fistHoldFrameCount++;
+            document.getElementById('status-msg').innerText = `HOLD TO UNIVERSE... ${Math.floor(fistHoldFrameCount/60*100)}%`;
+            document.getElementById('status-msg').style.color = "#ff0055";
+            if (fistHoldFrameCount > 60) finishPerformance();
+        } else {
+            fistHoldFrameCount = 0;
+            document.getElementById('status-msg').style.color = "#aaa";
+        }
+    }
+}
+
+async function finishPerformance() {
+    currentState = 'VISUALIZING';
+    document.getElementById('hud-panel').classList.add('hidden');
+    document.getElementById('energy-container').classList.add('hidden');
+    
+    // 淡出视频
+    document.getElementById('video-element').style.opacity = '0';
+    setTimeout(() => { document.getElementById('video-element').style.display = 'none'; }, 1000);
+
+    Tone.Transport.stop();
+    const blob = await recorder.stop();
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a'); a.href = url; a.download = 'noir_symphony.webm'; a.click();
+
+    const player = new Tone.Player(url).toDestination();
+    player.autostart = true; player.loop = true;
+    analyser = new Tone.Analyser("fft", 1024);
+    player.connect(analyser);
+
+    createCosmos();
+}
+
+function createCosmos() {
+    handMeshes.left.hide(); handMeshes.right.hide();
+    renderer.setClearColor(0x000000, 1); // 恢复黑背景
+
+    const count = 30000;
+    const geo = new THREE.BufferGeometry();
+    const pos = []; const col = [];
+    const c1 = new THREE.Color(0x00ffff), c2 = new THREE.Color(0xff00ff);
+
+    for(let i=0; i<count; i++) {
+        let x = Math.random()*50-25;
+        let y = Math.random()*50-25;
+        let z = Math.random()*50-25;
+        pos.push(x,y,z);
+        const dist = Math.sqrt(x*x+y*y+z*z);
+        const mixed = c1.clone().lerp(c2, dist/30);
+        col.push(mixed.r, mixed.g, mixed.b);
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    
+    const mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+    particleSystem = new THREE.Points(geo, mat);
+    scene.add(particleSystem);
+}
+
+const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+hands.onResults(processConducting);
+
+function animate() {
+    requestAnimationFrame(animate);
+    if (currentState === 'VISUALIZING' && particleSystem) {
+        particleSystem.rotation.y += 0.002;
+        const val = analyser.getValue()[10];
+        const scale = 1 + (val+100)/150;
+        particleSystem.scale.setScalar(scale);
+    }
+    renderer.render(scene, camera);
+}
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+    document.getElementById('center-controls').classList.add('hidden');
+    document.getElementById('hud-panel').classList.remove('hidden');
+    document.getElementById('energy-container').classList.remove('hidden');
+    
+    initThree();
+    await initAudio();
+    
+    const video = document.getElementById('video-element');
+    const cam = new Camera(video, {
+        onFrame: async () => await hands.send({image: video}),
+        width: 1280, height: 720
+    });
+    cam.start();
+    recorder.start();
+    currentState = 'CONDUCTING';
+    animate();
+});
+</script>
+</body>
+</html>
