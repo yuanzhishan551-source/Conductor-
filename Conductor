@@ -49,16 +49,6 @@
         #bpm-display { font-size: 32px; font-weight: 100; text-shadow: 0 0 10px #00ffff; letter-spacing: 2px; }
         #status-msg { font-size: 12px; color: #aaa; margin-top: 5px; letter-spacing: 1px; }
 
-        #center-controls {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; pointer-events: auto;
-        }
-        #start-btn {
-            padding: 20px 60px; font-size: 20px; background: rgba(0,0,0,0.4);
-            color: #fff; border: 1px solid #fff; cursor: pointer; text-transform: uppercase;
-            letter-spacing: 6px; transition: all 0.3s; backdrop-filter: blur(4px);
-        }
-        #start-btn:hover { background: #fff; color: #000; box-shadow: 0 0 30px white; }
         .hidden { display: none !important; }
     </style>
 
@@ -76,21 +66,17 @@
     <div id="ui-layer">
         <div id="hud-panel" class="hidden">
             <div style="margin-bottom:10px; font-size:12px; color:#ccc; border-bottom:1px solid #555; padding-bottom:5px;">CHANNEL STATUS</div>
-            <div id="ch-thumb" class="channel-indicator" style="color: #ff00cc"><div class="dot"></div>RHYTHM</div>
-            <div id="ch-index" class="channel-indicator" style="color: #ffcc00"><div class="dot"></div>BASS</div>
-            <div id="ch-middle" class="channel-indicator" style="color: #00ff00"><div class="dot"></div>HARMONY</div>
-            <div id="ch-ring" class="channel-indicator" style="color: #00ffff"><div class="dot"></div>MELODY</div>
-            <div id="ch-pinky" class="channel-indicator" style="color: #aa00ff"><div class="dot"></div>ATMOSPHERE</div>
+            <div id="ch-thumb" class="channel-indicator" style="color: #666; opacity: 0.3;"><div class="dot"></div>DISABLED</div>
+            <div id="ch-index" class="channel-indicator" style="color: #ffcc00"><div class="dot"></div>DRUM</div>
+            <div id="ch-middle" class="channel-indicator" style="color: #00ff00"><div class="dot"></div>PIANO</div>
+            <div id="ch-ring" class="channel-indicator" style="color: #00ffff"><div class="dot"></div>STRINGS</div>
+            <div id="ch-pinky" class="channel-indicator" style="color: #aa00ff"><div class="dot"></div>WIND</div>
         </div>
 
         <div id="energy-container" class="hidden">
             <div id="bpm-display">0 BPM</div>
             <div id="energy-bar-bg"><div id="energy-bar-fill"></div></div>
-            <div id="status-msg">请持续挥动双手以产生动能</div>
-        </div>
-
-        <div id="center-controls">
-            <button id="start-btn">START CONDUCTING</button>
+            <div id="status-msg"></div>
         </div>
     </div>
 
@@ -255,27 +241,35 @@ function initThree() {
 async function initAudio() {
     await Tone.start();
     recorder = new Tone.Recorder();
-    
-    channels.drums = new Tone.MembraneSynth().toDestination().connect(recorder);
-    channels.hat = new Tone.MetalSynth({ harmonicity:5.1, modulationIndex:32, envelope:{decay:0.5} }).toDestination().connect(recorder);
-    channels.bass = new Tone.FMSynth().toDestination().connect(recorder);
-    channels.chords = new Tone.PolySynth(Tone.Synth, { oscillator:{type:"fatsawtooth"} }).toDestination().connect(recorder);
-    channels.lead = new Tone.MonoSynth({ oscillator:{type:"square"} }).toDestination().connect(recorder);
-    channels.fx = new Tone.PluckSynth().toDestination().connect(recorder);
 
-    channels.hat.volume.value = -15;
+    // Load the 4 audio files
+    channels.drum = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_drum_split_by_lalalai.mp4").toDestination().connect(recorder);
+    channels.piano = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_piano_split_by_lalalai.mp3").toDestination().connect(recorder);
+    channels.strings = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_strings_split_by_lalalai.mp4").toDestination().connect(recorder);
+    channels.wind = new Tone.Player("https://github.com/yuanzhishan551-source/Conductor-/raw/main/1123398047-1-16_wind_split_by_lalalai.mp4").toDestination().connect(recorder);
+
+    // Set all players to loop
+    channels.drum.loop = true;
+    channels.piano.loop = true;
+    channels.strings.loop = true;
+    channels.wind.loop = true;
+
+    // Start with all volumes at -Infinity
+    channels.drum.volume.value = -Infinity;
+    channels.piano.volume.value = -Infinity;
+    channels.strings.volume.value = -Infinity;
+    channels.wind.volume.value = -Infinity;
+
     Tone.Destination.volume.value = -Infinity;
 
-    new Tone.Loop(t => { 
-        channels.drums.triggerAttackRelease("C1", "8n", t);
-        channels.hat.triggerAttackRelease("32n", t+0.25);
-    }, "2n").start(0);
-    new Tone.Sequence((t,n) => channels.bass.triggerAttackRelease(n, "8n", t), ["C2","C2","F2","G2"], "2n").start(0);
-    new Tone.Loop(t => channels.chords.triggerAttackRelease(["C4","E4","G4"], "2n", t), "1m").start(0);
-    new Tone.Pattern((t,n) => channels.lead.triggerAttackRelease(n, "16n", t), ["C5","E5","G5","B5","C6"], "upDown").start(0);
-    new Tone.Loop(t => { if(Math.random()>0.5) channels.fx.triggerAttack("C6", t); }, "4n").start(0);
+    // Wait for all players to load
+    await Promise.all([Tone.loaded()]);
 
-    Tone.Transport.bpm.value = 100;
+    // Start all players
+    channels.drum.start();
+    channels.piano.start();
+    channels.strings.start();
+    channels.wind.start();
 }
 
 // ================= 4. 交互处理 =================
@@ -334,7 +328,7 @@ function calculateDynamics(leftPos, rightPos) {
         energyBar.style.width = "0%";
         energyBar.style.opacity = "0.2";
         bpmDisplay.innerText = "SILENCE";
-        statusMsg.innerText = "挥动双手注入能量";
+        statusMsg.innerText = "";
     } else {
         if(Tone.Transport.state !== 'started') Tone.Transport.start();
         Tone.Destination.volume.rampTo(0, 0.1);
@@ -364,12 +358,12 @@ function updateChannelSwitches(hands) {
     });
 
     const t = 0.1;
-    channels.drums.volume.rampTo(status.thumb ? -5 : -Infinity, t);
-    channels.hat.volume.rampTo(status.thumb ? -15 : -Infinity, t);
-    channels.bass.volume.rampTo(status.index ? -5 : -Infinity, t);
-    channels.chords.volume.rampTo(status.middle ? -10 : -Infinity, t);
-    channels.lead.volume.rampTo(status.ring ? -10 : -Infinity, t);
-    channels.fx.volume.rampTo(status.pinky ? -5 : -Infinity, t);
+    // Thumb is disabled, only 4 fingers control the 4 audio tracks
+    // index -> drum, middle -> piano, ring -> strings, pinky -> wind
+    channels.drum.volume.rampTo(status.index ? 0 : -Infinity, t);
+    channels.piano.volume.rampTo(status.middle ? 0 : -Infinity, t);
+    channels.strings.volume.rampTo(status.ring ? 0 : -Infinity, t);
+    channels.wind.volume.rampTo(status.pinky ? 0 : -Infinity, t);
 
     FINGER_MAP.forEach(f => {
         const el = document.getElementById(f.id);
@@ -461,14 +455,14 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-document.getElementById('start-btn').addEventListener('click', async () => {
-    document.getElementById('center-controls').classList.add('hidden');
+// Auto-start on page load
+window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('hud-panel').classList.remove('hidden');
     document.getElementById('energy-container').classList.remove('hidden');
-    
+
     initThree();
     await initAudio();
-    
+
     const video = document.getElementById('video-element');
     const cam = new Camera(video, {
         onFrame: async () => await hands.send({image: video}),
