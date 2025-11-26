@@ -78,6 +78,13 @@
             <div id="energy-bar-bg"><div id="energy-bar-fill"></div></div>
             <div id="status-msg"></div>
         </div>
+
+        <div id="start-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; cursor: pointer;">
+            <div style="text-align: center; color: white;">
+                <div style="font-size: 48px; margin-bottom: 20px;">🎵</div>
+                <div style="font-size: 24px; letter-spacing: 2px;">CLICK TO START</div>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -455,8 +462,9 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Auto-start on page load
-window.addEventListener('DOMContentLoaded', async () => {
+// Click to start
+document.getElementById('start-overlay').addEventListener('click', async () => {
+    document.getElementById('start-overlay').style.display = 'none';
     document.getElementById('hud-panel').classList.remove('hidden');
     document.getElementById('energy-container').classList.remove('hidden');
 
