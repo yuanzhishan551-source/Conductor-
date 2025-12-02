@@ -71,7 +71,7 @@
             z-index: 10;
         }
 
-        /* 椭圆形舞台 - 显示摄像头画面 */
+        /* 椭圆形舞台 */
         #stage-ellipse {
             position: absolute;
             width: 1707px;
@@ -81,24 +81,9 @@
             border: 52px solid #FFFFFF;
             border-radius: 50%;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            z-index: 1;
+            z-index: 20;
             pointer-events: none;
-            overflow: hidden;
-            background: #000;
-        }
-
-        /* 椭圆形内的视频元素 */
-        #stage-video {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            min-width: 100%;
-            min-height: 100%;
-            width: auto;
-            height: auto;
-            transform: translate(-50%, -50%) scaleX(-1);
-            object-fit: cover;
-            z-index: 1;
+            background: #FFFFFF;
         }
 
         /* 3D 渲染层 */
@@ -263,10 +248,8 @@
 
     <!-- 人物容器 -->
     <div id="characters-container">
-        <!-- 椭圆形舞台 - 显示摄像头画面 -->
-        <div id="stage-ellipse">
-            <video id="stage-video" playsinline autoplay></video>
-        </div>
+        <!-- 椭圆形舞台 -->
+        <div id="stage-ellipse"></div>
     </div>
 
     <!-- 3D画布 -->
@@ -281,7 +264,7 @@
             <div id="ch-right-middle" class="channel-indicator" style="color: #aa00ff"><div class="dot"></div>WIND</div>
         </div>
 
-        <div id="energy-container" class="hidden">
+        <div id="energy-container" class="hidden" style="display: none;">
             <div id="bpm-display">0 BPM</div>
             <div id="energy-bar-bg"><div id="energy-bar-fill"></div></div>
             <div id="status-msg"></div>
@@ -294,7 +277,7 @@
 
 <script>
 // ================= 配置区域 =================
-const HISTORY_SIZE = 90; // ~1.5 seconds at 60fps for smoother BPM display
+const HISTORY_SIZE = 30; // ~0.5 seconds at 60fps for faster response
 const MIN_BPM = 60;
 const MAX_BPM = 180;
 const STOP_THRESHOLD = 0.005;
@@ -813,16 +796,9 @@ document.getElementById('start-btn').addEventListener('click', async () => {
         await initAudio();
 
         const video = document.getElementById('video-element');
-        const stageVideo = document.getElementById('stage-video');
 
         const cam = new Camera(video, {
-            onFrame: async () => {
-                // 同步视频流到舞台视频元素
-                if (video.srcObject && !stageVideo.srcObject) {
-                    stageVideo.srcObject = video.srcObject;
-                }
-                await hands.send({image: video});
-            },
+            onFrame: async () => await hands.send({image: video}),
             width: 1280, height: 720
         });
         await cam.start();
