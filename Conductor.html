@@ -414,9 +414,9 @@ class Hand3D {
     }
 
     updateColors(landmarks) {
-        // 所有骨骼和关节保持统一白色，不再有彩色效果
-        const color = 0xffffff; // 白色
-        const opacity = 0.6;
+        // 所有骨骼和关节保持统一黑色
+        const color = 0x000000; // 黑色
+        const opacity = 0.8;
 
         this.joints.forEach(joint => {
             joint.material.color.setHex(color);
